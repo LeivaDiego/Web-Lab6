@@ -54,7 +54,16 @@ func getMatch(w http.ResponseWriter, r *http.Request) {
 
 func createMatch(w http.ResponseWriter, r *http.Request) {
 	var m Match
-	json.NewDecoder(r.Body).Decode(&m)
+	err := json.NewDecoder(r.Body).Decode(&m)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if m.HomeTeam == "" || m.AwayTeam == "" || m.MatchDate == "" {
+		http.Error(w, "Todos los campos son obligatorios", http.StatusBadRequest)
+		return
+	}
 
 	res, err := db.Exec("INSERT INTO matches (home_team, away_team, match_date) VALUES (?, ?, ?)", m.HomeTeam, m.AwayTeam, m.MatchDate)
 	if err != nil {
@@ -70,9 +79,18 @@ func createMatch(w http.ResponseWriter, r *http.Request) {
 func updateMatch(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	var m Match
-	json.NewDecoder(r.Body).Decode(&m)
+	err := json.NewDecoder(r.Body).Decode(&m)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
-	_, err := db.Exec("UPDATE matches SET home_team=?, away_team=?, match_date=? WHERE id=?", m.HomeTeam, m.AwayTeam, m.MatchDate, id)
+	if m.HomeTeam == "" || m.AwayTeam == "" || m.MatchDate == "" {
+		http.Error(w, "Todos los campos son obligatorios", http.StatusBadRequest)
+		return
+	}
+
+	_, err = db.Exec("UPDATE matches SET home_team=?, away_team=?, match_date=? WHERE id=?", m.HomeTeam, m.AwayTeam, m.MatchDate, id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -92,22 +110,21 @@ func deleteMatch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Middleware CORS
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Permitir todas las solicitudes desde cualquier origen (útil para desarrollo)
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		
-		// Si es una solicitud preflight (OPTIONS), solo responder con headers
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
-
 
 func main() {
 	var err error
@@ -118,14 +135,23 @@ func main() {
 
 	r := mux.NewRouter()
 
-	// Agregar middleware de CORS
+	// Agregar middleware CORS
 	r.Use(enableCORS)
 
+	// Endpoints REST
 	r.HandleFunc("/api/matches", getMatches).Methods("GET")
 	r.HandleFunc("/api/matches/{id}", getMatch).Methods("GET")
 	r.HandleFunc("/api/matches", createMatch).Methods("POST")
 	r.HandleFunc("/api/matches/{id}", updateMatch).Methods("PUT")
 	r.HandleFunc("/api/matches/{id}", deleteMatch).Methods("DELETE")
+
+	// Manejar solicitudes preflight (OPTIONS)
+	r.HandleFunc("/api/matches", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("OPTIONS")
+	r.HandleFunc("/api/matches/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("OPTIONS")
 
 	log.Println("Servidor escuchando en el puerto 8080")
 	http.ListenAndServe(":8080", r)

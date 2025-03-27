@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_team TEXT NOT NULL,
+  away_team TEXT NOT NULL,
+  match_date TEXT NOT NULL
+);

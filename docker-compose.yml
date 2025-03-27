@@ -1,0 +1,18 @@
+services:
+  init-db:
+    image: nouchka/sqlite3
+    volumes:
+      - ./database:/data
+    entrypoint: /bin/sh
+    command: -c "sqlite3 /data/matches.db < /data/init.sql"
+
+
+
+  backend:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - init-db
+    volumes:
+      - ./database:/app/database

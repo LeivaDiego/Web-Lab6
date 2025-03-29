@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"regexp"
 
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
@@ -181,6 +182,7 @@ func getMatch(w http.ResponseWriter, r *http.Request) {
 
 // fetchEvents obtiene los eventos de un partido específico
 // y devuelve un slice de MatchEvent
+// @description Obtiene los eventos de un partido específico (goles, tarjetas amarillas o rojas)
 // @param table Nombre de la tabla (goals, yellow_cards o red_cards)
 // @param matchID ID del partido
 // @return []MatchEvent Slice de eventos del partido
@@ -212,6 +214,16 @@ func fetchEvents(table string, matchID string) []MatchEvent {
 	}
 	// Retorna el slice de eventos
 	return events
+}
+
+// isValidTimeFormat valida el formato de tiempo extra
+// @description Valida que el formato sea MM:SS donde MM puede ser 0–99 y SS sea 00–59
+// @param extraTime Cadena que representa el tiempo extra en formato MM:SS
+// @return bool Verdadero si el formato es válido, falso en caso contrario
+func isValidTimeFormat(extraTime string) bool {
+	// Valida que sea MM:SS donde MM puede ser 0–99 y SS sea 00–59
+	match, _ := regexp.MatchString(`^[0-9]{1,2}:[0-5][0-9]$`, extraTime)
+	return match
 }
 
 
@@ -382,6 +394,11 @@ func registerEvent(w http.ResponseWriter, r *http.Request, table string) {
 		return
 	}
 
+	if !isValidTimeFormat(payload.Minute) {
+		http.Error(w, "Formato de tiempo inválido. Usa MM:SS", http.StatusBadRequest)
+		return
+	}
+
 	// Verificar si el partido existe y obtener nombres reales de los equipos
 	var home, away string
 	err := db.QueryRow("SELECT home_team, away_team FROM matches WHERE id = ?", id).Scan(&home, &away)
@@ -478,6 +495,57 @@ func registerRedCard(w http.ResponseWriter, r *http.Request) {
 }
 
 
+// @Summary Establecer tiempo extra
+// @Description Establece el valor de tiempo extra en un partido específico
+// @Tags matches
+// @Accept json
+// @Produce json
+// @Param id path int true "ID del partido"
+// @Param extra_time body struct { ExtraTime string `json:"extraTime"` } true "Tiempo extra en formato MM:SS"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /api/matches/{id}/extratime [patch]
+func setExtraTime(w http.ResponseWriter, r *http.Request) {
+	id := mux.Vars(r)["id"]
+	var payload struct {
+		ExtraTime string `json:"extraTime"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.ExtraTime == "" {
+		http.Error(w, "JSON inválido o tiempo extra faltante", http.StatusBadRequest)
+		return
+	}
+
+	// Verificar que el partido exista
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM matches WHERE id=?)", id).Scan(&exists)
+	if err != nil || !exists {
+		http.Error(w, "Partido no encontrado", http.StatusNotFound)
+		return
+	}
+
+	// Validar el formato del tiempo extra
+	if !isValidTimeFormat(payload.ExtraTime) {
+		http.Error(w, "Formato de tiempo inválido. Usa MM:SS", http.StatusBadRequest)
+		return
+	}
+
+	// Actualizar el tiempo extra en la base de datos
+	_, err = db.Exec("UPDATE matches SET extra_time=? WHERE id=?", payload.ExtraTime, id)
+	
+	// Verificar si hubo un error al actualizar el tiempo extra
+	// Si hubo un error, devolver un error 500
+	if err != nil {
+		http.Error(w, "Error al actualizar el tiempo extra", http.StatusInternalServerError)
+		return
+	}
+
+	// Devolver un mensaje de éxito como respuesta JSON
+	json.NewEncoder(w).Encode(map[string]string{"message": "Tiempo extra actualizado correctamente"})
+}
+
+
 
 // enableCORS configura los encabezados necesarios para permitir solicitudes desde otros orígenes (CORS)
 // Se aplica como middleware para todas las rutas.
@@ -503,6 +571,7 @@ func enableCORS(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
 
 // main inicializa la conexión a la base de datos, configura las rutas y arranca el servidor HTTP
 func main() {
@@ -535,6 +604,9 @@ func main() {
 	r.HandleFunc("/api/matches/{id}/yellow_cards", registerYellowCard).Methods("PATCH")
 	r.HandleFunc("/api/matches/{id}/red_cards", registerRedCard).Methods("PATCH")
 
+	// Endpoint para establecer tiempo extra
+	r.HandleFunc("/api/matches/{id}/extratime", setExtraTime).Methods("PATCH")
+
 	// Manejar solicitudes preflight (OPTIONS)
 	r.HandleFunc("/api/matches", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -556,6 +628,11 @@ func main() {
 
 	// Manejar solicitudes preflight (OPTIONS) para registrar tarjetas rojas
 	r.HandleFunc("/api/matches/{id}/red_cards", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	  }).Methods("OPTIONS")
+
+	// Manejar solicitudes preflight (OPTIONS) para establecer tiempo extra
+	r.HandleFunc("/api/matches/{id}/extratime", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	  }).Methods("OPTIONS")
 	  

@@ -165,6 +165,7 @@
           <p><strong>Equipo Local:</strong> ${match.homeTeam}</p>
           <p><strong>Equipo Visitante:</strong> ${match.awayTeam}</p>
           <p><strong>Fecha:</strong> ${match.matchDate}</p>
+          <p><strong>Tiempo Extra:</strong> ${match.extraTime || '00:00'}</p>
           <p><strong>Goles ${match.homeTeam}:</strong> ${match.homeGoals ?? 0}</p>
           <p><strong>Goles ${match.awayTeam}:</strong> ${match.awayGoals ?? 0}</p>
           <p><strong>Amarillas ${match.homeTeam}:</strong> ${match.homeYellowCardsCount ?? 0}</p>
@@ -222,6 +223,7 @@
         <p><strong>Equipo Local:</strong> ${match.homeTeam}</p>
         <p><strong>Equipo Visitante:</strong> ${match.awayTeam}</p>
         <p><strong>Fecha:</strong> ${match.matchDate}</p>
+        <p><strong>Tiempo Extra:</strong> ${match.extraTime || '00:00'}</p>
       `;
 
       // Goles
@@ -336,7 +338,7 @@
               <input type="text" id="eventPlayer" required>
             </label>
             <label>Minuto (MM:SS):
-              <input type="text" id="eventMinute" required>
+              <input type="text" id="eventMinute" placeholder="00:00" required>
             </label>
             <button type="submit">Registrar</button>
             <button type="button" onclick="cancelPatch()">Cancelar</button>
@@ -349,8 +351,14 @@
         const team = document.getElementById('eventTeam').value;
         const player = document.getElementById('eventPlayer').value;
         const minute = document.getElementById('eventMinute').value;
-
-        const patchRes = await fetch(`${apiBaseUrl}/matches/${match.id}/${endpoint}`, {
+        
+        // Validar formato de tiempo
+        if (!isValidTimeFormat(minute)) {
+            alert('Formato de tiempo inválido. Debe ser MM:SS (ejemplo: 12:30)');
+            return;
+        }
+        
+          const patchRes = await fetch(`${apiBaseUrl}/matches/${match.id}/${endpoint}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ team, player, minute })
@@ -396,22 +404,56 @@
       document.getElementById('patchArea').innerHTML = '';
     }
 
+    // Validación de formato de tiempo (MM:SS)
+    function isValidTimeFormat(time) {
+      // Valida formato MM:SS, MM puede ser de 0 a 99, SS de 00 a 59
+      return /^[0-9]{1,2}:[0-5][0-9]$/.test(time);
+    }
 
     async function setExtraTime() {
-      const id = getPatchMatchId();
+      const matchId = getPatchMatchId();
+      const container = document.getElementById('patchArea');
+
       try {
-        const response = await fetch(`${apiBaseUrl}/matches/${id}/extratime`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ /* Puedes enviar datos adicionales si es necesario */ })
+        container.innerHTML = `
+          <section>
+            <h2>Establecer Tiempo Extra</h2>
+            <form id="extraTimeForm">
+              <label>Tiempo Extra (MM:SS):
+                <input type="text" id="extraTimeInput" placeholder="00:00" required>
+              </label>
+              <button type="submit">Guardar</button>
+              <button type="button" onclick="cancelPatch()">Cancelar</button>
+            </form>
+          </section>
+        `;
+
+        document.getElementById('extraTimeForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const extraTime = document.getElementById('extraTimeInput').value;
+          
+          // Validar formato de tiempo
+          if (!isValidTimeFormat(extraTime)) {
+            alert('Formato de tiempo inválido. Debe ser MM:SS (ejemplo: 12:30)');
+            return;
+          }
+
+          const response = await fetch(`${apiBaseUrl}/matches/${matchId}/extratime`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extraTime })
+          });
+
+          if (!response.ok) throw new Error('Error al establecer tiempo extra');
+          alert('Tiempo extra actualizado correctamente');
+          cancelPatch();
         });
-        if (!response.ok) throw new Error('Error al establecer tiempo extra');
-        alert('Tiempo extra establecido correctamente');
-        fetchMatches();
+
       } catch (error) {
-        alert(error);
+        alert(error.message || 'Ocurrió un error');
       }
     }
+
 
   </script>
 </body>

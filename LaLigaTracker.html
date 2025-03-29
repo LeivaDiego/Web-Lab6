@@ -162,6 +162,8 @@
           <p><strong>Equipo Local:</strong> ${match.homeTeam}</p>
           <p><strong>Equipo Visitante:</strong> ${match.awayTeam}</p>
           <p><strong>Fecha:</strong> ${match.matchDate}</p>
+          <p><strong>Goles ${match.homeTeam}:</strong> ${match.homeGoals ?? 0}</p>
+          <p><strong>Goles ${match.awayTeam}:</strong> ${match.awayGoals ?? 0}</p>
           <button onclick="deleteMatch(${match.id})">Eliminar Partido</button>
           <button onclick="prepareUpdate(${match.id}, '${match.homeTeam}', '${match.awayTeam}', '${match.matchDate}')">Actualizar Partido</button>
         `;
@@ -203,6 +205,7 @@
       }
     });
 
+
     // Función para mostrar los detalles de un partido
     function displayMatchDetails(match) {
       const detailsDiv = document.getElementById('matchDetails');
@@ -213,7 +216,18 @@
         <p><strong>Equipo Visitante:</strong> ${match.awayTeam}</p>
         <p><strong>Fecha:</strong> ${match.matchDate}</p>
       `;
+      if (match.goals && match.goals.length > 0) {
+        detailsDiv.innerHTML += `<h4>Goles:</h4><ul>`;
+        match.goals.forEach(gol => {
+          detailsDiv.innerHTML += `<li>${gol.minute} - ${gol.player} (${gol.team})</li>`;
+        });
+        
+        detailsDiv.innerHTML += `</ul>`;
+      } else {
+        detailsDiv.innerHTML += `<p><em>Sin goles registrados.</em></p>`;
+      }
     }
+
 
     // Función para preparar la actualización de un partido (rellena el formulario de actualización)
     function prepareUpdate(id, homeTeam, awayTeam, matchDate) {
@@ -222,6 +236,7 @@
       document.getElementById('updateAwayTeam').value = awayTeam;
       document.getElementById('updateMatchDate').value = matchDate;
     }
+
 
     // Función para actualizar un partido
     document.getElementById('updateMatchForm').addEventListener('submit', async (e) => {
@@ -244,12 +259,14 @@
       }
     });
 
+
     // Función para eliminar un partido
     document.getElementById('deleteMatchForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = document.getElementById('deleteMatchId').value;
       deleteMatch(id);
     });
+
 
     async function deleteMatch(id) {
       if (!confirm('¿Está seguro de eliminar este partido?')) return;
@@ -264,43 +281,76 @@
       }
     }
 
+
     // Funciones para endpoints PATCH (operaciones adicionales)
     // Se utiliza el campo "patchMatchId" para determinar el partido al que se aplicará la operación
     function getPatchMatchId() {
       return document.getElementById('patchMatchId').value;
     }
 
+
     async function registerGoal() {
-      const id = getPatchMatchId();
+      const matchId = getPatchMatchId();
+      const container = document.getElementById('patchArea');
+
       try {
-        const response = await fetch(`${apiBaseUrl}/matches/${id}/goals`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ /* Puedes enviar datos adicionales si es necesario */ })
+        // Obtener los datos del partido
+        const res = await fetch(`${apiBaseUrl}/matches/${matchId}`);
+        if (!res.ok) throw new Error('Partido no encontrado');
+        const match = await res.json();
+
+        // Inyectar el formulario con los nombres reales de los equipos
+        container.innerHTML = `
+          <section>
+            <h2>Registrar Gol</h2>
+            <form id="goalForm">
+              <p><strong>Partido:</strong> ${match.homeTeam} vs ${match.awayTeam}</p>
+              <label>Equipo que anotó:
+                <select id="goalTeam" required>
+                  <option value="${match.homeTeam}">${match.homeTeam}</option>
+                  <option value="${match.awayTeam}">${match.awayTeam}</option>
+                </select>
+              </label>
+              <label>Jugador:
+                <input type="text" id="goalPlayer" required>
+              </label>
+              <label>Minuto (MM:SS):
+                <input type="text" id="goalMinute" required>
+              </label>
+              <button type="submit">Registrar</button>
+              <button type="button" onclick="cancelPatch()">Cancelar</button>
+            </form>
+          </section>
+        `;
+
+        // Agregar manejador de envío del formulario
+        document.getElementById('goalForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const team = document.getElementById('goalTeam').value;
+          const player = document.getElementById('goalPlayer').value;
+          const minute = document.getElementById('goalMinute').value;
+
+          const patchRes = await fetch(`${apiBaseUrl}/matches/${matchId}/goals`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team, player, minute })
+          });
+
+          if (!patchRes.ok) throw new Error('Error al registrar gol');
+          alert('Gol registrado correctamente');
+          cancelPatch();
         });
-        if (!response.ok) throw new Error('Error al registrar gol');
-        alert('Gol registrado correctamente');
-        fetchMatches();
       } catch (error) {
-        alert(error);
+        alert(error.message || 'Ocurrió un error');
       }
     }
 
-    async function registerYellowCard() {
-      const id = getPatchMatchId();
-      try {
-        const response = await fetch(`${apiBaseUrl}/matches/${id}/yellowcards`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ /* Puedes enviar datos adicionales si es necesario */ })
-        });
-        if (!response.ok) throw new Error('Error al registrar tarjeta amarilla');
-        alert('Tarjeta amarilla registrada correctamente');
-        fetchMatches();
-      } catch (error) {
-        alert(error);
-      }
+
+    // Función para cancelar la operación de registro de una operación adicional
+    function cancelPatch() {
+      document.getElementById('patchArea').innerHTML = '';
     }
+
 
     async function registerRedCard() {
       const id = getPatchMatchId();

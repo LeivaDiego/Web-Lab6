@@ -130,6 +130,9 @@
     </form>
   </section>
 
+  <!-- Área para mostrar resultados de operaciones adicionales -->
+  <div id="patchArea"></div>
+
   <script>
     // URL base de la API (ajustar si es necesario)
     const apiBaseUrl = 'http://127.0.0.1:8080/api';
@@ -164,12 +167,17 @@
           <p><strong>Fecha:</strong> ${match.matchDate}</p>
           <p><strong>Goles ${match.homeTeam}:</strong> ${match.homeGoals ?? 0}</p>
           <p><strong>Goles ${match.awayTeam}:</strong> ${match.awayGoals ?? 0}</p>
+          <p><strong>Amarillas ${match.homeTeam}:</strong> ${match.homeYellowCardsCount ?? 0}</p>
+          <p><strong>Rojas ${match.homeTeam}:</strong> ${match.homeRedCardsCount ?? 0}</p>
+          <p><strong>Amarillas ${match.awayTeam}:</strong> ${match.awayYellowCardsCount ?? 0}</p>
+          <p><strong>Rojas ${match.awayTeam}:</strong> ${match.awayRedCardsCount ?? 0}</p>
           <button onclick="deleteMatch(${match.id})">Eliminar Partido</button>
           <button onclick="prepareUpdate(${match.id}, '${match.homeTeam}', '${match.awayTeam}', '${match.matchDate}')">Actualizar Partido</button>
         `;
         matchesDiv.appendChild(matchDiv);
       });
     }
+
 
     // Función para crear un nuevo partido
     document.getElementById('createMatchForm').addEventListener('submit', async (e) => {
@@ -185,7 +193,6 @@
         });
         if (!response.ok) throw new Error('Error al crear el partido');
         document.getElementById('createMatchForm').reset();
-        fetchMatches();
       } catch (error) {
         alert(error);
       }
@@ -216,15 +223,38 @@
         <p><strong>Equipo Visitante:</strong> ${match.awayTeam}</p>
         <p><strong>Fecha:</strong> ${match.matchDate}</p>
       `;
+
+      // Goles
       if (match.goals && match.goals.length > 0) {
         detailsDiv.innerHTML += `<h4>Goles:</h4><ul>`;
         match.goals.forEach(gol => {
           detailsDiv.innerHTML += `<li>${gol.minute} - ${gol.player} (${gol.team})</li>`;
         });
-        
         detailsDiv.innerHTML += `</ul>`;
       } else {
         detailsDiv.innerHTML += `<p><em>Sin goles registrados.</em></p>`;
+      }
+
+      // Tarjetas amarillas
+      if (match.yellow_cards && match.yellow_cards.length > 0) {
+        detailsDiv.innerHTML += `<h4>Tarjetas Amarillas:</h4><ul>`;
+        match.yellow_cards.forEach(card => {
+          detailsDiv.innerHTML += `<li>${card.minute} - ${card.player} (${card.team})</li>`;
+        });
+        detailsDiv.innerHTML += `</ul>`;
+      } else {
+        detailsDiv.innerHTML += `<p><em>Sin tarjetas amarillas registradas.</em></p>`;
+      }
+
+      // Tarjetas rojas
+      if (match.red_cards && match.red_cards.length > 0) {
+        detailsDiv.innerHTML += `<h4>Tarjetas Rojas:</h4><ul>`;
+        match.red_cards.forEach(card => {
+          detailsDiv.innerHTML += `<li>${card.minute} - ${card.player} (${card.team})</li>`;
+        });
+        detailsDiv.innerHTML += `</ul>`;
+      } else {
+        detailsDiv.innerHTML += `<p><em>Sin tarjetas rojas registradas.</em></p>`;
       }
     }
 
@@ -253,10 +283,10 @@
         });
         if (!response.ok) throw new Error('Error al actualizar el partido');
         document.getElementById('updateMatchForm').reset();
-        fetchMatches();
       } catch (error) {
         alert(error);
       }
+      alert('Partido actualizado correctamente');
     });
 
 
@@ -267,7 +297,7 @@
       deleteMatch(id);
     });
 
-
+    
     async function deleteMatch(id) {
       if (!confirm('¿Está seguro de eliminar este partido?')) return;
       try {
@@ -275,10 +305,10 @@
           method: 'DELETE'
         });
         if (!response.ok) throw new Error('Error al eliminar el partido');
-        fetchMatches();
       } catch (error) {
         alert(error);
       }
+      alert('Partido eliminado correctamente');
     }
 
 
@@ -288,85 +318,84 @@
       return document.getElementById('patchMatchId').value;
     }
 
-
-    async function registerGoal() {
-      const matchId = getPatchMatchId();
+    // Función genérica para mostrar el formulario de registro de evento
+    function showEventForm(match, tipoEvento, endpoint, mensajeExito) {
       const container = document.getElementById('patchArea');
+      container.innerHTML = `
+        <section>
+          <h2>Registrar ${tipoEvento}</h2>
+          <form id="eventForm">
+            <p><strong>Partido:</strong> ${match.homeTeam} vs ${match.awayTeam}</p>
+            <label>Equipo:
+              <select id="eventTeam" required>
+                <option value="${match.homeTeam}">${match.homeTeam}</option>
+                <option value="${match.awayTeam}">${match.awayTeam}</option>
+              </select>
+            </label>
+            <label>Jugador:
+              <input type="text" id="eventPlayer" required>
+            </label>
+            <label>Minuto (MM:SS):
+              <input type="text" id="eventMinute" required>
+            </label>
+            <button type="submit">Registrar</button>
+            <button type="button" onclick="cancelPatch()">Cancelar</button>
+          </form>
+        </section>
+      `;
 
-      try {
-        // Obtener los datos del partido
-        const res = await fetch(`${apiBaseUrl}/matches/${matchId}`);
-        if (!res.ok) throw new Error('Partido no encontrado');
-        const match = await res.json();
+      document.getElementById('eventForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const team = document.getElementById('eventTeam').value;
+        const player = document.getElementById('eventPlayer').value;
+        const minute = document.getElementById('eventMinute').value;
 
-        // Inyectar el formulario con los nombres reales de los equipos
-        container.innerHTML = `
-          <section>
-            <h2>Registrar Gol</h2>
-            <form id="goalForm">
-              <p><strong>Partido:</strong> ${match.homeTeam} vs ${match.awayTeam}</p>
-              <label>Equipo que anotó:
-                <select id="goalTeam" required>
-                  <option value="${match.homeTeam}">${match.homeTeam}</option>
-                  <option value="${match.awayTeam}">${match.awayTeam}</option>
-                </select>
-              </label>
-              <label>Jugador:
-                <input type="text" id="goalPlayer" required>
-              </label>
-              <label>Minuto (MM:SS):
-                <input type="text" id="goalMinute" required>
-              </label>
-              <button type="submit">Registrar</button>
-              <button type="button" onclick="cancelPatch()">Cancelar</button>
-            </form>
-          </section>
-        `;
-
-        // Agregar manejador de envío del formulario
-        document.getElementById('goalForm').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const team = document.getElementById('goalTeam').value;
-          const player = document.getElementById('goalPlayer').value;
-          const minute = document.getElementById('goalMinute').value;
-
-          const patchRes = await fetch(`${apiBaseUrl}/matches/${matchId}/goals`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ team, player, minute })
-          });
-
-          if (!patchRes.ok) throw new Error('Error al registrar gol');
-          alert('Gol registrado correctamente');
-          cancelPatch();
+        const patchRes = await fetch(`${apiBaseUrl}/matches/${match.id}/${endpoint}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ team, player, minute })
         });
-      } catch (error) {
-        alert(error.message || 'Ocurrió un error');
-      }
+
+        if (!patchRes.ok) {
+          alert('Error al registrar el evento');
+          return;
+        }
+
+        alert(mensajeExito);
+        cancelPatch();
+      });
     }
 
+    // Funciones específicas que usan showEventForm
+    async function registerGoal() {
+      const matchId = getPatchMatchId();
+      const res = await fetch(`${apiBaseUrl}/matches/${matchId}`);
+      if (!res.ok) return alert('Partido no encontrado');
+      const match = await res.json();
+      showEventForm(match, "Gol", "goals", "Gol registrado correctamente");
+    }
 
-    // Función para cancelar la operación de registro de una operación adicional
+    async function registerYellowCard() {
+      const matchId = getPatchMatchId();
+      const res = await fetch(`${apiBaseUrl}/matches/${matchId}`);
+      if (!res.ok) return alert('Partido no encontrado');
+      const match = await res.json();
+      showEventForm(match, "Tarjeta Amarilla", "yellow_cards", "Tarjeta amarilla registrada correctamente");
+    }
+
+    async function registerRedCard() {
+      const matchId = getPatchMatchId();
+      const res = await fetch(`${apiBaseUrl}/matches/${matchId}`);
+      if (!res.ok) return alert('Partido no encontrado');
+      const match = await res.json();
+      showEventForm(match, "Tarjeta Roja", "red_cards", "Tarjeta roja registrada correctamente");
+    }
+
+    // Función para cancelar cualquier formulario de evento
     function cancelPatch() {
       document.getElementById('patchArea').innerHTML = '';
     }
 
-
-    async function registerRedCard() {
-      const id = getPatchMatchId();
-      try {
-        const response = await fetch(`${apiBaseUrl}/matches/${id}/redcards`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ /* Puedes enviar datos adicionales si es necesario */ })
-        });
-        if (!response.ok) throw new Error('Error al registrar tarjeta roja');
-        alert('Tarjeta roja registrada correctamente');
-        fetchMatches();
-      } catch (error) {
-        alert(error);
-      }
-    }
 
     async function setExtraTime() {
       const id = getPatchMatchId();
@@ -383,6 +412,7 @@
         alert(error);
       }
     }
+
   </script>
 </body>
 </html>

@@ -7,6 +7,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -28,31 +29,39 @@ type Match struct {
 	ExtraTime string `json:"extraTime"`
 }
 
-// Goal representa un gol anotado en un partido
-// @description Modelo que contiene la información de un gol anotado
+// MatchEvent representa un evento de un partido (gol, tarjeta amarilla o roja)
+// @description Modelo que contiene la información de un evento en un partido
 // @property id, team, player, minute
 // @example { "id": 1, "team": "Real Madrid", "player": "Cristiano Ronaldo", "minute": "45" }
-type Goal struct {
+type MatchEvent struct {
 	ID     int    `json:"id"`
 	Team   string `json:"team"`
 	Player string `json:"player"`
 	Minute string `json:"minute"`
 }
 
-// FullMatchData representa un partido completo con sus goles, tarjetas amarillas y rojas
-// @description Modelo que contiene la información completa de un partido
+
+// FullMatchData representa un partido completo con eventos
+// @description Modelo que contiene la información completa de un partido, incluyendo eventos
 // @property id, homeTeam, awayTeam, matchDate, extraTime, homeGoals, awayGoals
-// @property goals que contiene los goles anotados en el partido
-// @example { "id": 1, "homeTeam": "Real Madrid", "awayTeam": "Barcelona", "matchDate": "2025-05-10", "extraTime": "05:00", "homeGoals": 2, "awayGoals": 1, "goals": [{ "id": 1, "team": "Real Madrid", "player": "Cristiano Ronaldo", "minute": "45" }] }
+// @property goals, awayYellowCardsCount, awayRedCardsCount, homeYellowCardsCount, homeRedCardsCount
+// @property yellowCards, redCards
+// @example { "id": 1, "homeTeam": "Real Madrid", "awayTeam": "Barcelona", "matchDate": "2025-05-10", "extraTime": "05:00", "homeGoals": 2, "awayGoals": 1, "goals": [{...}], "awayYellowCardsCount": 2, "awayRedCardsCount": 0, "homeYellowCardsCount": 1, "homeRedCardsCount": 0, "yellowCards": [{...}], "redCards": [{...}] }
 type FullMatchData struct {
-	ID         int    `json:"id"`
-	HomeTeam   string `json:"homeTeam"`
-	AwayTeam   string `json:"awayTeam"`
-	MatchDate  string `json:"matchDate"`
-	ExtraTime  string `json:"extraTime"`
-	HomeGoals  int    `json:"homeGoals"`
-	AwayGoals  int    `json:"awayGoals"`
-	Goals      []Goal `json:"goals,omitempty"` // solo se usa en getMatch
+	ID        int    `json:"id"`
+	HomeTeam  string `json:"homeTeam"`
+	AwayTeam  string `json:"awayTeam"`
+	MatchDate string `json:"matchDate"`
+	ExtraTime string `json:"extraTime"`
+	HomeGoals int    `json:"homeGoals"`
+	AwayGoals int    `json:"awayGoals"`
+	Goals     []MatchEvent `json:"goals"`
+	AwayYellowCardsCount int `json:"awayYellowCardsCount"`
+	AwayRedCardsCount    int `json:"awayRedCardsCount"`
+	HomeYellowCardsCount int `json:"homeYellowCardsCount"`
+	HomeRedCardsCount    int `json:"homeRedCardsCount"`	
+	YellowCards []MatchEvent `json:"yellow_cards"`
+	RedCards []MatchEvent `json:"red_cards"`
 }
 
 // db es la variable global que representa la conexión a la base de datos SQLite
@@ -103,7 +112,12 @@ func getMatches(w http.ResponseWriter, r *http.Request) {
 		// Contar goles por equipo y asignar a los campos correspondientes
 		db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeGoals)
 		db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", m.ID, m.AwayTeam).Scan(&m.AwayGoals)
-
+		
+		// Contar tarjetas amarillas y rojas por equipo y asignar a los campos correspondientes
+		db.QueryRow("SELECT COUNT(*) FROM yellow_cards WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeYellowCardsCount)
+		db.QueryRow("SELECT COUNT(*) FROM red_cards WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeRedCardsCount)
+		db.QueryRow("SELECT COUNT(*) FROM yellow_cards WHERE match_id = ? AND team = ?", m.ID, m.AwayTeam).Scan(&m.AwayYellowCardsCount)
+		db.QueryRow("SELECT COUNT(*) FROM red_cards WHERE match_id = ? AND team = ?", m.ID, m.AwayTeam).Scan(&m.AwayRedCardsCount)
 
 		// Agregar el partido al slice
 		matches = append(matches, m)
@@ -147,41 +161,57 @@ func getMatch(w http.ResponseWriter, r *http.Request) {
 	db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", id, m.HomeTeam).Scan(&m.HomeGoals)
 	db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", id, m.AwayTeam).Scan(&m.AwayGoals)
 
-	// Obtener detalles de goles del partido
-	// Ejecutar la consulta para obtener los goles del partido
-	golRows, err := db.Query("SELECT id, team, player, minute FROM goals WHERE match_id = ?", id)
-	
-	// Verificar si hubo un error al ejecutar la consulta
-	// Si hubo un error, devolver un error 500
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	// Asegurarse de cerrar las filas después de usarlas
-	defer golRows.Close()
+	// Contar tarjetas amarillas y rojas por equipo y asignar a los campos correspondientes
+	db.QueryRow("SELECT COUNT(*) FROM yellow_cards WHERE match_id = ? AND team = ?", id, m.HomeTeam).Scan(&m.HomeYellowCardsCount)
+	db.QueryRow("SELECT COUNT(*) FROM yellow_cards WHERE match_id = ? AND team = ?", id, m.AwayTeam).Scan(&m.AwayYellowCardsCount)
+	db.QueryRow("SELECT COUNT(*) FROM red_cards WHERE match_id = ? AND team = ?", id, m.HomeTeam).Scan(&m.HomeRedCardsCount)
+	db.QueryRow("SELECT COUNT(*) FROM red_cards WHERE match_id = ? AND team = ?", id, m.AwayTeam).Scan(&m.AwayRedCardsCount)
 
-	// Crear un slice para almacenar los goles
-	var goles []Goal
-	// Iterar sobre las filas y escanear los datos en la estructura Goal
-	for golRows.Next() {
-		// Crear una variable para almacenar el gol
-		var g Goal
-		// Escanear cada fila en la estructura Goal y agregarla al slice
-		err := golRows.Scan(&g.ID, &g.Team, &g.Player, &g.Minute)
-		// Verificar si hubo un error al escanear la fila
-		// Si hubo un error, devolver un error 500
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		// Agregar el gol al slice
-		goles = append(goles, g)
-	}
-	// Asignar los goles al campo correspondiente de la estructura Match
-	m.Goals = goles
+	// Listado de goles
+	m.Goals = fetchEvents("goals", id)
+
+	// Listado de tarjetas
+	m.YellowCards = fetchEvents("yellow_cards", id)
+	m.RedCards = fetchEvents("red_cards", id)
 
 	// Devolver el partido encontrado como respuesta JSON
 	json.NewEncoder(w).Encode(m)
+}
+
+
+// fetchEvents obtiene los eventos de un partido específico
+// y devuelve un slice de MatchEvent
+// @param table Nombre de la tabla (goals, yellow_cards o red_cards)
+// @param matchID ID del partido
+// @return []MatchEvent Slice de eventos del partido
+func fetchEvents(table string, matchID string) []MatchEvent {
+	// Inicializa un slice vacío para almacenar los eventos
+	var events []MatchEvent
+
+	// Ejecuta la consulta para obtener los eventos del partido específico
+	// y escanea los resultados en la estructura MatchEvent
+	rows, err := db.Query("SELECT id, team, player, minute FROM " + table + " WHERE match_id = ?", matchID)
+	
+	// Verifica si hubo un error al ejecutar la consulta
+	// Si hubo un error, devuelve un slice vacío
+	if err != nil {
+		return events // Retornar slice vacío si hay error
+	}
+	defer rows.Close()
+
+	// Itera sobre las filas y escanea los datos en la estructura MatchEvent
+	// y agrega cada evento al slice de eventos
+	for rows.Next() {
+		// Crea una variable para almacenar el evento
+		var e MatchEvent
+		// Escanea cada fila en la estructura MatchEvent
+		// y agrega el evento al slice
+		if err := rows.Scan(&e.ID, &e.Team, &e.Player, &e.Minute); err == nil {
+			events = append(events, e)
+		}
+	}
+	// Retorna el slice de eventos
+	return events
 }
 
 
@@ -318,25 +348,29 @@ func deleteMatch(w http.ResponseWriter, r *http.Request) {
 }
 
 
-// @Summary Registrar un gol
-// @Description Registra un gol con el nombre del jugador, equipo y minuto
+// @Summary Registrar evento (gol, tarjeta amarilla o roja)
+// @Description Registra un evento en un partido específico (gol, tarjeta amarilla o roja)
 // @Tags matches
 // @Accept json
 // @Produce json
 // @Param id path int true "ID del partido"
-// @Param body body map[string]string true "Datos del gol"
+// @Param event body struct { Team string `json:"team"`; Player string `json:"player"`; Minute string `json:"minute"` } true "Datos del evento"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
-// @Router /api/matches/{id}/goals [patch]
-func registerGoal(w http.ResponseWriter, r *http.Request) {
+// @Failure 500 {object} map[string]string
+func registerEvent(w http.ResponseWriter, r *http.Request, table string) {
+	// Obtener el ID del partido de los parámetros de la URL
 	id := mux.Vars(r)["id"]
+	
+	// Leer el cuerpo de la solicitud y decodificarlo en la estructura correspondiente
 	var payload struct {
 		Team   string `json:"team"`
 		Player string `json:"player"`
 		Minute string `json:"minute"`
 	}
 
+	// Verificar si hubo un error al decodificar el JSON
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "JSON inválido", http.StatusBadRequest)
 		return
@@ -362,16 +396,85 @@ func registerGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Insertar el gol en la tabla goals
-	_, err = db.Exec(`
-		INSERT INTO goals (match_id, team, player, minute)
-		VALUES (?, ?, ?, ?)`, id, payload.Team, payload.Player, payload.Minute)
+	// Insertar el evento en la base de datos
+	// Dependiendo de la tabla, se insertará en la tabla correspondiente (goals, yellow_cards o red_cards)
+	_, err = db.Exec(fmt.Sprintf(`
+		INSERT INTO %s (match_id, team, player, minute) 
+		VALUES (?, ?, ?, ?)`, table), id, payload.Team, payload.Player, payload.Minute)
+
+	// Verificar si hubo un error al insertar el evento
+	// Si hubo un error, devolver un error 500
+	// y cerrar la conexión a la base de datos
 	if err != nil {
 		http.Error(w, "Error al registrar el gol", http.StatusInternalServerError)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{"message": "Gol registrado correctamente"})
+	// Mapeo de tabla → mensaje de respuesta
+	// Dependiendo de la tabla, se asigna un mensaje diferente
+	var message string
+	switch table {
+	case "goals":
+		message = "Gol registrado correctamente"
+	case "yellow_cards":
+		message = "Tarjeta amarilla registrada correctamente"
+	case "red_cards":
+		message = "Tarjeta roja registrada correctamente"
+	default:
+		message = "Evento registrado correctamente"
+	}
+
+	// Devolver un mensaje de éxito como respuesta JSON
+	// y cerrar la conexión a la base de datos
+	json.NewEncoder(w).Encode(map[string]string{"message": message})
+}
+
+// @Summary Registrar gol
+// @Description Registra un gol en un partido específico
+// @Tags matches
+// @Accept json
+// @Produce json
+// @Param id path int true "ID del partido"
+// @Param goal body Goal true "Datos del gol"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/matches/{id}/goals [patch]
+func registerGoal(w http.ResponseWriter, r *http.Request) {
+	registerEvent(w, r, "goals")
+}
+
+// @Summary Registrar tarjeta amarilla
+// @Description Registra una tarjeta amarilla en un partido específico
+// @Tags matches
+// @Accept json
+// @Produce json
+// @Param id path int true "ID del partido"
+// @Param goal body Goal true "Datos del gol"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/matches/{id}/yellow_cards [patch]
+func registerYellowCard(w http.ResponseWriter, r *http.Request) {
+	registerEvent(w, r, "yellow_cards")
+}
+
+// @Summary Registrar tarjeta roja
+// @Description Registra una tarjeta roja en un partido específico
+// @Tags matches
+// @Accept json
+// @Produce json
+// @Param id path int true "ID del partido"
+// @Param goal body Goal true "Datos del gol"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /api/matches/{id}/red_cards [patch]
+func registerRedCard(w http.ResponseWriter, r *http.Request) {
+	registerEvent(w, r, "red_cards")
 }
 
 
@@ -429,6 +532,8 @@ func main() {
 	
 	// Enpoints PATCH para registrar goles, tarjetas amarillas y rojas
 	r.HandleFunc("/api/matches/{id}/goals", registerGoal).Methods("PATCH")
+	r.HandleFunc("/api/matches/{id}/yellow_cards", registerYellowCard).Methods("PATCH")
+	r.HandleFunc("/api/matches/{id}/red_cards", registerRedCard).Methods("PATCH")
 
 	// Manejar solicitudes preflight (OPTIONS)
 	r.HandleFunc("/api/matches", func(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +549,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	  }).Methods("OPTIONS")
 	  
+	// Manejar solicitudes preflight (OPTIONS) para registrar tarjetas amarillas
+	r.HandleFunc("/api/matches/{id}/yellow_cards", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	  }).Methods("OPTIONS")
 
+	// Manejar solicitudes preflight (OPTIONS) para registrar tarjetas rojas
+	r.HandleFunc("/api/matches/{id}/red_cards", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	  }).Methods("OPTIONS")
+	  
 	// Iniciar el servidor HTTP en el puerto 8080
 	// y manejar las solicitudes con el enrutador configurado
 	log.Println("Servidor escuchando en el puerto 8080")

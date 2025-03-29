@@ -10,13 +10,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"regexp"
+	"strconv"
+
+	_ "laligatracker/docs"
 
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
-
 
 // Match representa un partido de fútbol
 // @description Modelo que contiene la información básica de un partido
@@ -33,7 +35,6 @@ type Match struct {
 // MatchEvent representa un evento de un partido (gol, tarjeta amarilla o roja)
 // @description Modelo que contiene la información de un evento en un partido
 // @property id, team, player, minute
-// @example { "id": 1, "team": "Real Madrid", "player": "Cristiano Ronaldo", "minute": "45" }
 type MatchEvent struct {
 	ID     int    `json:"id"`
 	Team   string `json:"team"`
@@ -41,33 +42,44 @@ type MatchEvent struct {
 	Minute string `json:"minute"`
 }
 
-
 // FullMatchData representa un partido completo con eventos
 // @description Modelo que contiene la información completa de un partido, incluyendo eventos
-// @property id, homeTeam, awayTeam, matchDate, extraTime, homeGoals, awayGoals
-// @property goals, awayYellowCardsCount, awayRedCardsCount, homeYellowCardsCount, homeRedCardsCount
-// @property yellowCards, redCards
-// @example { "id": 1, "homeTeam": "Real Madrid", "awayTeam": "Barcelona", "matchDate": "2025-05-10", "extraTime": "05:00", "homeGoals": 2, "awayGoals": 1, "goals": [{...}], "awayYellowCardsCount": 2, "awayRedCardsCount": 0, "homeYellowCardsCount": 1, "homeRedCardsCount": 0, "yellowCards": [{...}], "redCards": [{...}] }
+// @property id, homeTeam, awayTeam, matchDate, extraTime, homeGoals, awayGoals, goals, yellowCards, redCards
 type FullMatchData struct {
-	ID        int    `json:"id"`
-	HomeTeam  string `json:"homeTeam"`
-	AwayTeam  string `json:"awayTeam"`
-	MatchDate string `json:"matchDate"`
+	ID                   int          `json:"id"`
+	HomeTeam             string       `json:"homeTeam"`
+	AwayTeam             string       `json:"awayTeam"`
+	MatchDate            string       `json:"matchDate"`
+	ExtraTime            string       `json:"extraTime"`
+	HomeGoals            int          `json:"homeGoals"`
+	AwayGoals            int          `json:"awayGoals"`
+	Goals                []MatchEvent `json:"goals"`
+	AwayYellowCardsCount int          `json:"awayYellowCardsCount"`
+	AwayRedCardsCount    int          `json:"awayRedCardsCount"`
+	HomeYellowCardsCount int          `json:"homeYellowCardsCount"`
+	HomeRedCardsCount    int          `json:"homeRedCardsCount"`
+	YellowCards          []MatchEvent `json:"yellow_cards"`
+	RedCards             []MatchEvent `json:"red_cards"`
+}
+
+// EventPayload representa la carga útil de un evento (gol, tarjeta amarilla o roja)
+// @description Modelo que contiene la información de un evento en un partido
+// @property Team, Player, Minute
+type EventPayload struct {
+	Team   string `json:"team"`
+	Player string `json:"player"`
+	Minute string `json:"minute"`
+}
+
+// ExtraTimePayload representa la carga útil para establecer el tiempo extra
+// @description Modelo que contiene la información del tiempo extra en un partido
+// @property ExtraTime
+type ExtraTimePayload struct {
 	ExtraTime string `json:"extraTime"`
-	HomeGoals int    `json:"homeGoals"`
-	AwayGoals int    `json:"awayGoals"`
-	Goals     []MatchEvent `json:"goals"`
-	AwayYellowCardsCount int `json:"awayYellowCardsCount"`
-	AwayRedCardsCount    int `json:"awayRedCardsCount"`
-	HomeYellowCardsCount int `json:"homeYellowCardsCount"`
-	HomeRedCardsCount    int `json:"homeRedCardsCount"`	
-	YellowCards []MatchEvent `json:"yellow_cards"`
-	RedCards []MatchEvent `json:"red_cards"`
 }
 
 // db es la variable global que representa la conexión a la base de datos SQLite
 var db *sql.DB
-
 
 // @Summary Obtener todos los partidos
 // @Description Retorna una lista con todos los partidos registrados
@@ -78,8 +90,8 @@ var db *sql.DB
 // @Router /api/matches [get]
 func getMatches(w http.ResponseWriter, r *http.Request) {
 	// Ejecutar la consulta para obtener todos los partidos
-	rows, err := db.Query("SELECT id, home_team, away_team, match_date, extra_time FROM matches")	
-	
+	rows, err := db.Query("SELECT id, home_team, away_team, match_date, extra_time FROM matches")
+
 	// Verificar si hubo un error al ejecutar la consulta
 	// Si hubo un error, devolver un error 500
 	// y cerrar la conexión a la base de datos
@@ -113,7 +125,7 @@ func getMatches(w http.ResponseWriter, r *http.Request) {
 		// Contar goles por equipo y asignar a los campos correspondientes
 		db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeGoals)
 		db.QueryRow("SELECT COUNT(*) FROM goals WHERE match_id = ? AND team = ?", m.ID, m.AwayTeam).Scan(&m.AwayGoals)
-		
+
 		// Contar tarjetas amarillas y rojas por equipo y asignar a los campos correspondientes
 		db.QueryRow("SELECT COUNT(*) FROM yellow_cards WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeYellowCardsCount)
 		db.QueryRow("SELECT COUNT(*) FROM red_cards WHERE match_id = ? AND team = ?", m.ID, m.HomeTeam).Scan(&m.HomeRedCardsCount)
@@ -127,7 +139,6 @@ func getMatches(w http.ResponseWriter, r *http.Request) {
 	// Verificar si hubo un error al iterar sobre las filas
 	json.NewEncoder(w).Encode(matches)
 }
-
 
 // @Summary Obtener partido por ID
 // @Description Retorna los datos de un partido específico
@@ -149,7 +160,7 @@ func getMatch(w http.ResponseWriter, r *http.Request) {
 
 	// Escanear la fila en la estructura Match
 	err := row.Scan(&m.ID, &m.HomeTeam, &m.AwayTeam, &m.MatchDate, &m.ExtraTime)
-	
+
 	// Verificar si hubo un error al escanear la fila
 	// Si hubo un error, devolver un error 404
 	// y cerrar la conexión a la base de datos
@@ -179,21 +190,16 @@ func getMatch(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(m)
 }
 
-
 // fetchEvents obtiene los eventos de un partido específico
 // y devuelve un slice de MatchEvent
-// @description Obtiene los eventos de un partido específico (goles, tarjetas amarillas o rojas)
-// @param table Nombre de la tabla (goals, yellow_cards o red_cards)
-// @param matchID ID del partido
-// @return []MatchEvent Slice de eventos del partido
 func fetchEvents(table string, matchID string) []MatchEvent {
 	// Inicializa un slice vacío para almacenar los eventos
 	var events []MatchEvent
 
 	// Ejecuta la consulta para obtener los eventos del partido específico
 	// y escanea los resultados en la estructura MatchEvent
-	rows, err := db.Query("SELECT id, team, player, minute FROM " + table + " WHERE match_id = ?", matchID)
-	
+	rows, err := db.Query("SELECT id, team, player, minute FROM "+table+" WHERE match_id = ?", matchID)
+
 	// Verifica si hubo un error al ejecutar la consulta
 	// Si hubo un error, devuelve un slice vacío
 	if err != nil {
@@ -217,15 +223,12 @@ func fetchEvents(table string, matchID string) []MatchEvent {
 }
 
 // isValidTimeFormat valida el formato de tiempo extra
-// @description Valida que el formato sea MM:SS donde MM puede ser 0–99 y SS sea 00–59
-// @param extraTime Cadena que representa el tiempo extra en formato MM:SS
-// @return bool Verdadero si el formato es válido, falso en caso contrario
+// Acepta un string en formato MM:SS donde MM puede ser 0-99 y SS puede ser 00-59
 func isValidTimeFormat(extraTime string) bool {
 	// Valida que sea MM:SS donde MM puede ser 0–99 y SS sea 00–59
 	match, _ := regexp.MatchString(`^[0-9]{1,2}:[0-5][0-9]$`, extraTime)
 	return match
 }
-
 
 // @Summary Crear un nuevo partido
 // @Description Crea un nuevo registro de partido con los datos básicos
@@ -259,7 +262,7 @@ func createMatch(w http.ResponseWriter, r *http.Request) {
 
 	// InsertaR solo los campos requeridos, los demás se usarán los valores por defecto
 	res, err := db.Exec(`INSERT INTO matches (home_team, away_team, match_date) VALUES (?, ?, ?)`, m.HomeTeam, m.AwayTeam, m.MatchDate)
-	
+
 	// Verificar si hubo un error al insertar el partido
 	// Si hubo un error, devolver un error 500
 	// y cerrar la conexión a la base de datos
@@ -275,7 +278,6 @@ func createMatch(w http.ResponseWriter, r *http.Request) {
 	m.ExtraTime = "00:00"
 	json.NewEncoder(w).Encode(m)
 }
-
 
 // @Summary Actualizar partido
 // @Description Modifica los datos de un partido existente por ID
@@ -294,7 +296,7 @@ func updateMatch(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	var m Match
 	err := json.NewDecoder(r.Body).Decode(&m)
-	
+
 	// Verificar si hubo un error al decodificar el JSON
 	// Si hubo un error, devolver un error 400
 	// y cerrar la conexión a la base de datos
@@ -312,10 +314,10 @@ func updateMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Solo actualizar los campos requeridos, los opcionales se mantienen sin cambios (para eso se usará PATCH) 
+	// Solo actualizar los campos requeridos, los opcionales se mantienen sin cambios (para eso se usará PATCH)
 	_, err = db.Exec(`UPDATE matches SET home_team=?, away_team=?, match_date=? WHERE id=?`,
 		m.HomeTeam, m.AwayTeam, m.MatchDate, id)
-	
+
 	// Verificar si hubo un error al actualizar el partido
 	// Si hubo un error, devolver un error 500
 	// y cerrar la conexión a la base de datos
@@ -329,7 +331,6 @@ func updateMatch(w http.ResponseWriter, r *http.Request) {
 	m.ID, _ = strconv.Atoi(id)
 	json.NewEncoder(w).Encode(m)
 }
-
 
 // @Summary Eliminar partido
 // @Description Elimina un partido de la base de datos por ID
@@ -345,7 +346,7 @@ func deleteMatch(w http.ResponseWriter, r *http.Request) {
 	// y ejecutar la consulta para eliminar el partido por ID
 	id := mux.Vars(r)["id"]
 	_, err := db.Exec("DELETE FROM matches WHERE id=?", id)
-	
+
 	// Verificar si hubo un error al eliminar el partido
 	// Si hubo un error, devolver un error 500
 	// y cerrar la conexión a la base de datos
@@ -359,28 +360,14 @@ func deleteMatch(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-
-// @Summary Registrar evento (gol, tarjeta amarilla o roja)
-// @Description Registra un evento en un partido específico (gol, tarjeta amarilla o roja)
-// @Tags matches
-// @Accept json
-// @Produce json
-// @Param id path int true "ID del partido"
-// @Param event body struct { Team string `json:"team"`; Player string `json:"player"`; Minute string `json:"minute"` } true "Datos del evento"
-// @Success 200 {object} map[string]string
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
+// registerEvent registra un evento (gol, tarjeta amarilla o roja) en un partido específico
+// y lo inserta en la base de datos
 func registerEvent(w http.ResponseWriter, r *http.Request, table string) {
 	// Obtener el ID del partido de los parámetros de la URL
 	id := mux.Vars(r)["id"]
-	
+
 	// Leer el cuerpo de la solicitud y decodificarlo en la estructura correspondiente
-	var payload struct {
-		Team   string `json:"team"`
-		Player string `json:"player"`
-		Minute string `json:"minute"`
-	}
+	var payload EventPayload
 
 	// Verificar si hubo un error al decodificar el JSON
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -452,7 +439,7 @@ func registerEvent(w http.ResponseWriter, r *http.Request, table string) {
 // @Accept json
 // @Produce json
 // @Param id path int true "ID del partido"
-// @Param goal body Goal true "Datos del gol"
+// @Param goal body EventPayload true "Datos del gol"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -468,7 +455,7 @@ func registerGoal(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param id path int true "ID del partido"
-// @Param goal body Goal true "Datos del gol"
+// @Param yellow_card body EventPayload true "Datos de la tarjeta amarilla"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -484,7 +471,7 @@ func registerYellowCard(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param id path int true "ID del partido"
-// @Param goal body Goal true "Datos del gol"
+// @Param red_card body EventPayload true "Datos de la tarjeta roja"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -501,16 +488,14 @@ func registerRedCard(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param id path int true "ID del partido"
-// @Param extra_time body struct { ExtraTime string `json:"extraTime"` } true "Tiempo extra en formato MM:SS"
+// @Param extra_time body ExtraTimePayload true "Tiempo extra en formato MM:SS"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Router /api/matches/{id}/extratime [patch]
 func setExtraTime(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	var payload struct {
-		ExtraTime string `json:"extraTime"`
-	}
+	var payload ExtraTimePayload
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.ExtraTime == "" {
 		http.Error(w, "JSON inválido o tiempo extra faltante", http.StatusBadRequest)
@@ -533,7 +518,7 @@ func setExtraTime(w http.ResponseWriter, r *http.Request) {
 
 	// Actualizar el tiempo extra en la base de datos
 	_, err = db.Exec("UPDATE matches SET extra_time=? WHERE id=?", payload.ExtraTime, id)
-	
+
 	// Verificar si hubo un error al actualizar el tiempo extra
 	// Si hubo un error, devolver un error 500
 	if err != nil {
@@ -546,15 +531,14 @@ func setExtraTime(w http.ResponseWriter, r *http.Request) {
 }
 
 
-
 // enableCORS configura los encabezados necesarios para permitir solicitudes desde otros orígenes (CORS)
 // Se aplica como middleware para todas las rutas.
 func enableCORS(next http.Handler) http.Handler {
-	
+
 	// Configura los encabezados CORS para permitir solicitudes desde cualquier origen
 	// y permite métodos y encabezados específicos
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		
+
 		// Configura los encabezados CORS
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
@@ -578,7 +562,7 @@ func main() {
 	// Inicializa la conexión a la base de datos SQLite
 	var err error
 	db, err = sql.Open("sqlite3", "./database/matches.db")
-	
+
 	// Verifica si hubo un error al abrir la base de datos
 	// Si hubo un error, imprime el error y termina la ejecución del programa
 	// y cierra la conexión a la base de datos
@@ -598,7 +582,7 @@ func main() {
 	r.HandleFunc("/api/matches", createMatch).Methods("POST")
 	r.HandleFunc("/api/matches/{id}", updateMatch).Methods("PUT")
 	r.HandleFunc("/api/matches/{id}", deleteMatch).Methods("DELETE")
-	
+
 	// Enpoints PATCH para registrar goles, tarjetas amarillas y rojas
 	r.HandleFunc("/api/matches/{id}/goals", registerGoal).Methods("PATCH")
 	r.HandleFunc("/api/matches/{id}/yellow_cards", registerYellowCard).Methods("PATCH")
@@ -607,11 +591,14 @@ func main() {
 	// Endpoint para establecer tiempo extra
 	r.HandleFunc("/api/matches/{id}/extratime", setExtraTime).Methods("PATCH")
 
+	// Endpoint para la documentación Swagger
+	r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
+
 	// Manejar solicitudes preflight (OPTIONS)
 	r.HandleFunc("/api/matches", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("OPTIONS")
-	
+
 	r.HandleFunc("/api/matches/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("OPTIONS")
@@ -619,23 +606,23 @@ func main() {
 	// Manejar solicitudes preflight (OPTIONS) para registrar goles
 	r.HandleFunc("/api/matches/{id}/goals", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	  }).Methods("OPTIONS")
-	  
+	}).Methods("OPTIONS")
+
 	// Manejar solicitudes preflight (OPTIONS) para registrar tarjetas amarillas
 	r.HandleFunc("/api/matches/{id}/yellow_cards", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	  }).Methods("OPTIONS")
+	}).Methods("OPTIONS")
 
 	// Manejar solicitudes preflight (OPTIONS) para registrar tarjetas rojas
 	r.HandleFunc("/api/matches/{id}/red_cards", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	  }).Methods("OPTIONS")
+	}).Methods("OPTIONS")
 
 	// Manejar solicitudes preflight (OPTIONS) para establecer tiempo extra
 	r.HandleFunc("/api/matches/{id}/extratime", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	  }).Methods("OPTIONS")
-	  
+	}).Methods("OPTIONS")
+
 	// Iniciar el servidor HTTP en el puerto 8080
 	// y manejar las solicitudes con el enrutador configurado
 	log.Println("Servidor escuchando en el puerto 8080")

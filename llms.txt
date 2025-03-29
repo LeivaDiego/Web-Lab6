@@ -1,0 +1,104 @@
+LA LIGA TRACKER – API REST  
+===========================
+
+Esta API permite gestionar partidos de fútbol. Puedes:
+
+- Crear, consultar, actualizar y eliminar partidos.
+- Registrar eventos como goles, tarjetas amarillas y tarjetas rojas.
+- Establecer tiempo extra.
+- Ver la documentación completa en Swagger.
+
+--------------------------------------
+BASE URL DEL SERVIDOR:
+
+http://localhost:8080/api
+
+--------------------------------------
+DOCUMENTACIÓN INTERACTIVA (SWAGGER):
+
+Abre en tu navegador:
+
+http://localhost:8080/swagger/index.html
+
+--------------------------------------
+ENDPOINTS DISPONIBLES:
+
+1. OBTENER TODOS LOS PARTIDOS  
+   Método: GET  
+   URL: /api/matches
+
+2. OBTENER UN PARTIDO POR ID  
+   Método: GET  
+   URL: /api/matches/{id}
+
+3. CREAR UN NUEVO PARTIDO  
+   Método: POST  
+   URL: /api/matches  
+   Cuerpo (JSON):  
+   {
+     "homeTeam": "Real Madrid",
+     "awayTeam": "Barcelona",
+     "matchDate": "2025-05-10"
+   }
+
+4. ACTUALIZAR UN PARTIDO EXISTENTE  
+   Método: PUT  
+   URL: /api/matches/{id}  
+   Cuerpo (JSON):  
+   {
+     "homeTeam": "Real Madrid",
+     "awayTeam": "Barcelona",
+     "matchDate": "2025-05-11"
+   }
+
+5. ELIMINAR UN PARTIDO  
+   Método: DELETE  
+   URL: /api/matches/{id}
+
+--------------------------------------
+REGISTRAR EVENTOS
+
+6. REGISTRAR GOL  
+   Método: PATCH  
+   URL: /api/matches/{id}/goals  
+   Cuerpo (JSON):  
+   {
+     "team": "Real Madrid",
+     "player": "Cristiano Ronaldo",
+     "minute": "45"
+   }
+
+7. REGISTRAR TARJETA AMARILLA  
+   Método: PATCH  
+   URL: /api/matches/{id}/yellow_cards  
+   Cuerpo (JSON):  
+   {
+     "team": "Barcelona",
+     "player": "Xavi",
+     "minute": "30"
+   }
+
+8. REGISTRAR TARJETA ROJA  
+   Método: PATCH  
+   URL: /api/matches/{id}/red_cards  
+   Cuerpo (JSON):  
+   {
+     "team": "Real Madrid",
+     "player": "Sergio Ramos",
+     "minute": "88"
+   }
+
+9. ESTABLECER TIEMPO EXTRA  
+   Método: PATCH  
+   URL: /api/matches/{id}/extratime  
+   Cuerpo (JSON):  
+   {
+     "extraTime": "05:00"
+   }
+
+--------------------------------------
+LEVANTAR SERVIDOR (DOCKER COMPOSE):
+
+Ejecuta en consola:
+
+docker compose up --build

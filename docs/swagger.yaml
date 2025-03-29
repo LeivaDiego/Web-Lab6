@@ -1,0 +1,353 @@
+definitions:
+  main.EventPayload:
+    description: Modelo que contiene la información de un evento en un partido
+    properties:
+      minute:
+        type: string
+      player:
+        type: string
+      team:
+        type: string
+    type: object
+  main.ExtraTimePayload:
+    description: Modelo que contiene la información del tiempo extra en un partido
+    properties:
+      extraTime:
+        type: string
+    type: object
+  main.Match:
+    description: Modelo que contiene la información básica de un partido
+    properties:
+      awayTeam:
+        type: string
+      extraTime:
+        type: string
+      homeTeam:
+        type: string
+      id:
+        type: integer
+      matchDate:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Modelo que contiene la información del tiempo extra en un partido
+paths:
+  /api/matches:
+    get:
+      consumes:
+      - application/json
+      description: Retorna una lista con todos los partidos registrados
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Match'
+            type: array
+      summary: Obtener todos los partidos
+      tags:
+      - matches
+    post:
+      consumes:
+      - application/json
+      description: Crea un nuevo registro de partido con los datos básicos
+      parameters:
+      - description: Datos del partido
+        in: body
+        name: match
+        required: true
+        schema:
+          $ref: '#/definitions/main.Match'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Match'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Crear un nuevo partido
+      tags:
+      - matches
+  /api/matches/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Elimina un partido de la base de datos por ID
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Sin contenido
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Eliminar partido
+      tags:
+      - matches
+    get:
+      consumes:
+      - application/json
+      description: Retorna los datos de un partido específico
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Match'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Obtener partido por ID
+      tags:
+      - matches
+    put:
+      consumes:
+      - application/json
+      description: Modifica los datos de un partido existente por ID
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Datos actualizados
+        in: body
+        name: match
+        required: true
+        schema:
+          $ref: '#/definitions/main.Match'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Match'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Actualizar partido
+      tags:
+      - matches
+  /api/matches/{id}/extratime:
+    patch:
+      consumes:
+      - application/json
+      description: Establece el valor de tiempo extra en un partido específico
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Tiempo extra en formato MM:SS
+        in: body
+        name: extra_time
+        required: true
+        schema:
+          $ref: '#/definitions/main.ExtraTimePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Establecer tiempo extra
+      tags:
+      - matches
+  /api/matches/{id}/goals:
+    patch:
+      consumes:
+      - application/json
+      description: Registra un gol en un partido específico
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Datos del gol
+        in: body
+        name: goal
+        required: true
+        schema:
+          $ref: '#/definitions/main.EventPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Registrar gol
+      tags:
+      - matches
+  /api/matches/{id}/red_cards:
+    patch:
+      consumes:
+      - application/json
+      description: Registra una tarjeta roja en un partido específico
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Datos de la tarjeta roja
+        in: body
+        name: red_card
+        required: true
+        schema:
+          $ref: '#/definitions/main.EventPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Registrar tarjeta roja
+      tags:
+      - matches
+  /api/matches/{id}/yellow_cards:
+    patch:
+      consumes:
+      - application/json
+      description: Registra una tarjeta amarilla en un partido específico
+      parameters:
+      - description: ID del partido
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Datos de la tarjeta amarilla
+        in: body
+        name: yellow_card
+        required: true
+        schema:
+          $ref: '#/definitions/main.EventPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Registrar tarjeta amarilla
+      tags:
+      - matches
+swagger: "2.0"
